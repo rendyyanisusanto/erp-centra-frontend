@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <div class="page-title">Laporan Hutang</div>
-        <div class="page-subtitle">Outstanding amounts owed to suppliers</div>
+        <div class="page-subtitle">Tagihan ke supplier yang belum lunas</div>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-secondary" @click="exportExcel" :disabled="!report">📥 Export Excel</button>
@@ -52,7 +52,7 @@
                 <td colspan="7">
                   <div class="empty-state">
                     <div class="empty-state-icon">✅</div>
-                    <h3>No outstanding payables!</h3>
+                    <h3>Tidak ada hutang outstanding</h3>
                   </div>
                 </td>
               </tr>

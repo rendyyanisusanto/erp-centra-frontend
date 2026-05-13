@@ -4,22 +4,30 @@
     <div class="card">
       <div class="card-header">
         <div class="search-input-wrap"><span class="search-icon">🔍</span><input class="form-control" v-model="search" placeholder="Cari..." @input="debouncedFetch" /></div>
-        <select class="form-control" style="width:140px" v-model="statusFilter" @change="fetchItems"><option value="">Semua Status</option><option>UNPAID</option><option>PARTIAL</option><option>PAID</option></select>
+        <select class="form-control" style="width:160px" v-model="statusFilter" @change="fetchItems"><option value="">Semua Status</option><option>DRAFT</option><option>APPROVED</option><option>CANCELLED</option></select>
         <input class="form-control" type="date" v-model="dateDari" @change="fetchItems" style="width:150px" />
         <input class="form-control" type="date" v-model="dateSampai" @change="fetchItems" style="width:150px" />
       </div>
       <div class="table-wrapper"><table>
-        <thead><tr><th>Pelanggan</th><th>Sales</th><th>Tanggal</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
+        <thead><tr><th>Pelanggan</th><th>Sales</th><th>Tanggal</th><th>Total</th><th>Status Dokumen</th><th>Status Bayar</th><th>Aksi</th></tr></thead>
         <tbody>
-          <template v-if="loading"><tr class="skeleton-row" v-for="i in 5" :key="i"><td v-for="j in 6" :key="j"><div class="skeleton-cell"></div></td></tr></template>
-          <template v-else-if="items.length===0"><tr><td colspan="6"><div class="empty-state"><div class="empty-state-icon">💰</div><h3>Tidak ada data penjualan</h3><button class="btn btn-primary" v-if="auth.can('sales.create')" @click="openCreate">Tambah Penjualan</button></div></td></tr></template>
+          <template v-if="loading"><tr class="skeleton-row" v-for="i in 5" :key="i"><td v-for="j in 7" :key="j"><div class="skeleton-cell"></div></td></tr></template>
+          <template v-else-if="items.length===0"><tr><td colspan="7"><div class="empty-state"><div class="empty-state-icon">💰</div><h3>Tidak ada data penjualan</h3><button class="btn btn-primary" v-if="auth.can('sales.create')" @click="openCreate">Tambah Penjualan</button></div></td></tr></template>
           <tr v-else v-for="item in items" :key="item.id">
             <td class="fw-600">{{ item.customer?.name }}</td>
             <td>{{ item.salesman ? `${item.salesman.code} - ${item.salesman.name}` : '-' }}</td>
             <td>{{ item.date }}</td>
             <td class="fw-600">{{ fmt(item.total_amount) }}</td>
             <td><StatusBadge :status="item.status" /></td>
-            <td><button class="btn btn-sm btn-secondary" @click="openDetail(item)">👁 Detail</button></td>
+            <td><StatusBadge :status="item.payment_status" /></td>
+            <td>
+              <div class="action-btns">
+                <button class="btn btn-sm btn-secondary" @click="openDetail(item)">👁 Detail</button>
+                <button class="btn btn-sm btn-warning" v-if="item.status==='DRAFT' && auth.can('sales.create')" @click="openEdit(item)">Edit</button>
+                <button class="btn btn-sm btn-primary" v-if="item.status==='DRAFT' && auth.can('sales.create')" @click="approveItem(item)">Setujui</button>
+                <button class="btn btn-sm btn-secondary" v-if="item.status==='APPROVED' && auth.can('sales.create')" @click="cancelItem(item)">Batalkan</button>
+              </div>
+            </td>
           </tr>
         </tbody>
       </table></div>
@@ -27,7 +35,7 @@
     </div>
 
     <!-- Tambah Penjualan Modal -->
-    <BaseModal v-if="showForm" title="Tambah Penjualan" size="xl" @close="showForm=false">
+    <BaseModal v-if="showForm" :title="editingId ? 'Edit Penjualan' : 'Tambah Penjualan'" size="xl" @close="showForm=false">
       <div class="grid-2">
         <div class="form-group">
           <label class="form-label required">Pelanggan</label>
@@ -53,7 +61,7 @@
         </table>
         <div class="text-right fw-700" style="margin-top:8px">Total: {{ fmt(saleTotal) }}</div>
       </div>
-      <template #footer><button class="btn btn-secondary" @click="showForm=false">Batal</button><button class="btn btn-primary" :disabled="saving" @click="save"><span v-if="saving" class="spinner"></span><span v-else>Tambah Penjualan</span></button></template>
+      <template #footer><button class="btn btn-secondary" @click="showForm=false">Batal</button><button class="btn btn-primary" :disabled="saving" @click="save"><span v-if="saving" class="spinner"></span><span v-else>{{ editingId ? 'Update Penjualan' : 'Tambah Penjualan' }}</span></button></template>
     </BaseModal>
 
     <!-- Detail Modal -->
@@ -63,13 +71,18 @@
         <div class="detail-info-item"><label>Tanggal</label><p>{{ selectedItem.date }}</p></div>
         <div class="detail-info-item"><label>Sales</label><p>{{ selectedItem.salesman ? `${selectedItem.salesman.code} - ${selectedItem.salesman.name}` : '-' }}</p></div>
         <div class="detail-info-item"><label>Total</label><p class="fw-700">{{ fmt(selectedItem.total_amount) }}</p></div>
+        <div class="detail-info-item"><label>Total Dibayar</label><p class="fw-700">{{ fmt(selectedItem.total_paid) }}</p></div>
+        <div class="detail-info-item"><label>Sisa Piutang</label><p class="fw-700">{{ fmt(selectedItem.remaining_amount) }}</p></div>
       </div>
       <table class="detail-table"><thead><tr><th>Produk</th><th>Jumlah</th><th>Harga</th><th>Subtotal</th></tr></thead>
         <tbody><tr v-for="d in selectedItem.details" :key="d.id"><td>{{ d.product?.name }}</td><td>{{ d.qty }}</td><td>{{ fmt(d.price) }}</td><td>{{ fmt(d.subtotal) }}</td></tr></tbody>
       </table>
       <template #footer>
         <button class="btn btn-secondary" @click="showDetail=false">Tutup</button>
+        <button class="btn btn-warning" v-if="selectedItem?.status==='DRAFT' && auth.can('sales.create')" @click="openEdit(selectedItem)">Edit</button>
         <button class="btn btn-primary" v-if="selectedItem?.details?.length" @click="openSalesInvoicePrint(selectedItem.id)">Cetak Nota</button>
+        <button class="btn btn-primary" v-if="selectedItem?.status==='DRAFT' && auth.can('sales.create')" @click="approveItem(selectedItem)">Setujui</button>
+        <button class="btn btn-secondary" v-if="selectedItem?.status==='APPROVED' && auth.can('sales.create')" @click="cancelItem(selectedItem)">Batalkan</button>
       </template>
     </BaseModal>
   </div>
@@ -101,6 +114,7 @@ const showForm = ref(false)
 const saving = ref(false)
 const showDetail = ref(false)
 const selectedItem = ref(null)
+const editingId = ref(null)
 
 const form = ref({ customer_id: '', salesman_id: null, date: '', description: '', details: [{ product_id: '', qty: 1, price: 0 }] })
 const saleTotal = computed(() => form.value.details.reduce((s, d) => s + Number(d.qty || 0) * Number(d.price || 0), 0))
@@ -124,11 +138,57 @@ const fetchItems = async () => {
 
 const changePage = p => { page.value = p; fetchItems() }
 const openCreate = () => {
+  editingId.value = null
   form.value = { customer_id: '', salesman_id: null, date: new Date().toISOString().split('T')[0], description: '', details: [{ product_id: '', qty: 1, price: 0 }] }
   showForm.value = true
 }
+const openEdit = async (item) => {
+  try {
+    const r = await api.get(`/sales/${item.id}`)
+    const data = r.data.data
+    if (data.status !== 'DRAFT') {
+      toast.error('Hanya dokumen DRAFT yang dapat diedit')
+      return
+    }
+    editingId.value = data.id
+    form.value = {
+      customer_id: data.customer_id || '',
+      salesman_id: data.salesman_id || null,
+      date: data.date?.split('T')[0] || '',
+      description: data.description || '',
+      details: (data.details || []).map(d => ({ product_id: d.product_id, qty: Number(d.qty || 0), price: Number(d.price || 0) })),
+    }
+    if (!form.value.details.length) form.value.details = [{ product_id: '', qty: 1, price: 0 }]
+    showForm.value = true
+  } catch (e) {
+    toast.error(e.response?.data?.message || 'Gagal memuat data penjualan')
+  }
+}
 const openDetail = async item => {
   try { const r = await api.get(`/sales/${item.id}`); selectedItem.value = r.data.data; showDetail.value = true } catch (e) { toast.error('Terjadi kesalahan') }
+}
+const approveItem = async (item) => {
+  if (!confirm('Setujui transaksi penjualan ini?')) return
+  try {
+    await api.post(`/sales/${item.id}/approve`)
+    toast.success('Penjualan disetujui')
+    if (showDetail.value && selectedItem.value?.id === item.id) await openDetail(item)
+    fetchItems()
+  } catch (e) {
+    toast.error(e.response?.data?.message || 'Gagal menyetujui penjualan')
+  }
+}
+const cancelItem = async (item) => {
+  const cancel_reason = prompt('Alasan pembatalan:')
+  if (cancel_reason === null) return
+  try {
+    await api.post(`/sales/${item.id}/cancel`, { cancel_reason })
+    toast.success('Penjualan dibatalkan')
+    if (showDetail.value && selectedItem.value?.id === item.id) await openDetail(item)
+    fetchItems()
+  } catch (e) {
+    toast.error(e.response?.data?.message || 'Gagal membatalkan penjualan')
+  }
 }
 const openSalesInvoicePrint = (id) => {
   if (!id) return
@@ -139,9 +199,15 @@ const removeItem = i => form.value.details.splice(i, 1)
 const save = async () => {
   saving.value = true
   try {
-    await api.post('/sales', form.value)
-    toast.success('Penjualan berhasil ditambahkan. Stok berkurang.')
+    if (editingId.value) {
+      await api.put(`/sales/${editingId.value}`, form.value)
+      toast.success('Penjualan berhasil diperbarui.')
+    } else {
+      await api.post('/sales', form.value)
+      toast.success('Penjualan berhasil ditambahkan sebagai Draft.')
+    }
     showForm.value = false
+    if (showDetail.value && selectedItem.value?.id === editingId.value) await openDetail(selectedItem.value)
     fetchItems()
   } catch (e) {
     toast.error(e.response?.data?.message || 'Terjadi kesalahan')

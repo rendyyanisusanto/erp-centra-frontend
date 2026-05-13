@@ -27,7 +27,7 @@
         <div class="po-select-options">
           <div v-if="loading" class="po-select-empty">Memuat...</div>
           <div v-else-if="filteredPOs.length === 0" class="po-select-empty">
-            {{ query ? `Tidak ditemukan "${query}"` : 'Tidak ada PO terbuka' }}
+            {{ query ? `Tidak ditemukan "${query}"` : 'Tidak ada PO yang disetujui' }}
           </div>
           <div
             v-for="po in filteredPOs" :key="po.id"
@@ -82,7 +82,7 @@ const filteredPOs = computed(() => {
 const load = async () => {
   loading.value = true
   try {
-    const r = await api.get('/purchase', { params: { status: 'OPEN', limit: 500 } })
+    const r = await api.get('/purchase', { params: { status: 'APPROVED', limit: 500 } })
     pos.value = r.data.data?.data || []
   } catch {} finally { loading.value = false }
 }
@@ -189,7 +189,7 @@ onBeforeUnmount(() => {
 .po-option-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
 .po-option-date { font-size: 11px; color: #94a3b8; }
 .po-option-status { font-size: 10px; font-weight: 600; letter-spacing: .3px; padding: 1px 6px; border-radius: 4px; }
-.po-option-status.open { background: #dcfce7; color: #16a34a; }
+.po-option-status.approved { background: #dcfce7; color: #16a34a; }
 .po-option-status.partial { background: #fef9c3; color: #b45309; }
 .po-select-empty { padding: 12px 14px; font-size: 13px; color: #94a3b8; text-align: center; }
 </style>

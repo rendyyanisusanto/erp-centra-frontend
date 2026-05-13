@@ -82,7 +82,7 @@
                   <button class="btn btn-sm btn-secondary" @click="openDetailModal(item.id)">👁</button>
                   <button class="btn btn-sm btn-secondary" v-if="auth.can('finished-goods-receipt.create') && item.status === 'DRAFT'" @click="openEditModal(item.id)">✏️</button>
                   <button class="btn btn-sm btn-primary" v-if="auth.can('finished-goods-receipt.approve') && item.status === 'DRAFT'" @click="openAction('approve', item)">✅</button>
-                  <button class="btn btn-sm btn-secondary" v-if="auth.can('finished-goods-receipt.approve') && item.status !== 'APPROVED' && item.status !== 'CANCELLED'" @click="openAction('cancel', item)">🚫</button>
+                  <button class="btn btn-sm btn-secondary" v-if="auth.can('finished-goods-receipt.approve') && item.status === 'APPROVED'" @click="openAction('cancel', item)">🚫</button>
                   <button class="btn btn-sm btn-danger" v-if="auth.can('finished-goods-receipt.create') && item.status === 'DRAFT'" @click="openAction('delete', item)">🗑️</button>
                 </div>
               </td>
@@ -176,7 +176,7 @@
         <button class="btn btn-secondary" @click="showDetailModal = false">Tutup</button>
         <button class="btn btn-secondary" v-if="detailItem?.status === 'DRAFT' && auth.can('finished-goods-receipt.create')" @click="openEditModal(detailItem.id)">Ubah</button>
         <button class="btn btn-primary" v-if="detailItem?.status === 'DRAFT' && auth.can('finished-goods-receipt.approve')" :disabled="actionLoading" @click="openAction('approve', detailItem)">Setujui</button>
-        <button class="btn btn-secondary" v-if="detailItem && detailItem.status !== 'APPROVED' && detailItem.status !== 'CANCELLED' && auth.can('finished-goods-receipt.approve')" :disabled="actionLoading" @click="openAction('cancel', detailItem)">Batal</button>
+        <button class="btn btn-secondary" v-if="detailItem?.status === 'APPROVED' && auth.can('finished-goods-receipt.approve')" :disabled="actionLoading" @click="openAction('cancel', detailItem)">Batal</button>
       </template>
     </BaseModal>
 
@@ -245,13 +245,13 @@ const confirmTitle = computed(() => {
 const confirmMessage = computed(() => {
   if (actionType.value === 'delete') return 'Hapus penerimaan ini?'
   if (actionType.value === 'approve') return 'Setujui penerimaan ini? Stok produk akan bertambah.'
-  if (actionType.value === 'cancel') return 'Batalkan penerimaan ini?'
+  if (actionType.value === 'cancel') return 'Batalkan penerimaan ini? Stok barang jadi akan direverse.'
   return 'Lanjutkan proses ini?'
 })
 const confirmButtonText = computed(() => {
   if (actionType.value === 'delete') return 'Hapus'
   if (actionType.value === 'approve') return 'Setujui'
-  if (actionType.value === 'cancel') return 'Cancel'
+  if (actionType.value === 'cancel') return 'Batalkan'
   return 'Lanjutkan'
 })
 const confirmButtonClass = computed(() => {
@@ -424,7 +424,9 @@ const handleAction = async () => {
       await api.post(`/finished-goods-receipts/${id}/approve`)
       toast.success('Penerimaan berhasil di-approve')
     } else if (actionType.value === 'cancel') {
-      await api.post(`/finished-goods-receipts/${id}/cancel`)
+      const cancel_reason = prompt('Alasan pembatalan:')
+      if (cancel_reason === null) return
+      await api.post(`/finished-goods-receipts/${id}/cancel`, { cancel_reason })
       toast.success('Penerimaan berhasil di-cancel')
     }
 

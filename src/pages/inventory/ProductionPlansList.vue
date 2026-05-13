@@ -80,7 +80,7 @@
                   <button class="btn btn-sm btn-secondary" @click="openDetailModal(item.id)">👁</button>
                   <button class="btn btn-sm btn-secondary" v-if="auth.can('production-plan.create') && item.status === 'DRAFT'" @click="openEditModal(item.id)">✏️</button>
                   <button class="btn btn-sm btn-primary" v-if="auth.can('production-plan.approve') && item.status === 'DRAFT'" @click="openAction('approve', item)">✅</button>
-                  <button class="btn btn-sm btn-secondary" v-if="auth.can('production-plan.approve') && item.status !== 'APPROVED' && item.status !== 'CANCELLED'" @click="openAction('cancel', item)">🚫</button>
+                  <button class="btn btn-sm btn-secondary" v-if="auth.can('production-plan.approve') && item.status === 'APPROVED'" @click="openAction('cancel', item)">🚫</button>
                   <button class="btn btn-sm btn-danger" v-if="auth.can('production-plan.create') && item.status === 'DRAFT'" @click="openAction('delete', item)">🗑️</button>
                 </div>
               </td>
@@ -173,7 +173,7 @@
         <button class="btn btn-secondary" @click="showDetailModal = false">Tutup</button>
         <button class="btn btn-secondary" v-if="detailItem?.status === 'DRAFT' && auth.can('production-plan.create')" @click="openEditModal(detailItem.id)">Ubah</button>
         <button class="btn btn-primary" v-if="detailItem?.status === 'DRAFT' && auth.can('production-plan.approve')" :disabled="actionLoading" @click="openAction('approve', detailItem)">Setujui</button>
-        <button class="btn btn-secondary" v-if="detailItem && detailItem.status !== 'APPROVED' && detailItem.status !== 'CANCELLED' && auth.can('production-plan.approve')" :disabled="actionLoading" @click="openAction('cancel', detailItem)">Batal</button>
+        <button class="btn btn-secondary" v-if="detailItem?.status === 'APPROVED' && auth.can('production-plan.approve')" :disabled="actionLoading" @click="openAction('cancel', detailItem)">Batal</button>
       </template>
     </BaseModal>
 
@@ -240,13 +240,13 @@ const confirmTitle = computed(() => {
 const confirmMessage = computed(() => {
   if (actionType.value === 'delete') return 'Hapus rencana produksi ini?'
   if (actionType.value === 'approve') return 'Setujui rencana produksi ini? Setelah approve data menjadi read-only.'
-  if (actionType.value === 'cancel') return 'Batalkan rencana produksi ini?'
+  if (actionType.value === 'cancel') return 'Batalkan rencana produksi ini? Histori tetap disimpan.'
   return 'Lanjutkan proses ini?'
 })
 const confirmButtonText = computed(() => {
   if (actionType.value === 'delete') return 'Hapus'
   if (actionType.value === 'approve') return 'Setujui'
-  if (actionType.value === 'cancel') return 'Cancel'
+  if (actionType.value === 'cancel') return 'Batalkan'
   return 'Lanjutkan'
 })
 const confirmButtonClass = computed(() => {
@@ -401,7 +401,9 @@ const handleAction = async () => {
       await api.post(`/production-plans/${id}/approve`)
       toast.success('Rencana produksi berhasil di-approve')
     } else if (actionType.value === 'cancel') {
-      await api.post(`/production-plans/${id}/cancel`)
+      const cancel_reason = prompt('Alasan pembatalan:')
+      if (cancel_reason === null) return
+      await api.post(`/production-plans/${id}/cancel`, { cancel_reason })
       toast.success('Rencana produksi berhasil di-cancel')
     }
 

@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <div class="page-title">Laporan Piutang</div>
-        <div class="page-subtitle">Tagihan pelanggan yang belum dibayar</div>
+        <div class="page-subtitle">Tagihan pelanggan yang belum lunas</div>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-secondary" @click="exportExcel" :disabled="!report">📥 Export Excel</button>
@@ -52,7 +52,7 @@
                 <td colspan="7">
                   <div class="empty-state">
                     <div class="empty-state-icon">✅</div>
-                    <h3>No outstanding receivables!</h3>
+                    <h3>Tidak ada piutang outstanding</h3>
                   </div>
                 </td>
               </tr>

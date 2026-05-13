@@ -3,114 +3,198 @@
     <div class="page-header"><div><div class="page-title">Pembayaran Penjualan</div></div><button class="btn btn-primary" v-if="auth.can('sales.create')" @click="openCreate">+ Catat Pembayaran</button></div>
     <div class="card">
       <div class="table-wrapper"><table>
-        <thead><tr><th>Pelanggan</th><th>Sales</th><th>Status SO</th><th>Tanggal</th><th>Jumlah</th><th>Akun</th><th>Aksi</th></tr></thead>
+        <thead><tr><th>No Pembayaran</th><th>Pelanggan</th><th>Status</th><th>Tanggal</th><th>Total Pembayaran</th><th>Akun</th><th>Aksi</th></tr></thead>
         <tbody>
           <template v-if="loading"><tr class="skeleton-row" v-for="i in 5" :key="i"><td v-for="j in 7" :key="j"><div class="skeleton-cell"></div></td></tr></template>
-          <template v-else-if="items.length===0"><tr><td colspan="7"><div class="empty-state"><div class="empty-state-icon">💵</div><h3>Tidak ada data pembayaran</h3></div></td></tr></template>
+          <template v-else-if="items.length===0"><tr><td colspan="7"><div class="empty-state"><h3>Tidak ada data pembayaran</h3></div></td></tr></template>
           <tr v-else v-for="item in items" :key="item.id">
-            <td class="fw-600">{{ item.sale?.customer?.name }}</td><td>{{ item.sale?.salesman ? `${item.sale.salesman.code} - ${item.sale.salesman.name}` : '-' }}</td><td><StatusBadge :status="item.sale?.status" /></td><td>{{ item.date }}</td><td class="fw-600">{{ fmt(item.amount) }}</td><td>{{ item.account?.name }}</td>
-            <td>
-              <button class="btn btn-sm btn-secondary" v-if="item.sale_id || item.sale?.id" @click="openPaymentReceipt(item.sale_id || item.sale?.id)">Cetak Kwitansi</button>
+            <td class="fw-600">{{ item.payment_number || ('SP-' + String(item.id).padStart(6, '0')) }}</td>
+            <td>{{ item.customer?.name }}</td>
+            <td><StatusBadge :status="item.status" /></td>
+            <td>{{ fmtDate(item.date) }}</td>
+            <td class="fw-600">{{ fmt(item.total_amount) }}</td>
+            <td>{{ item.account?.name }}</td>
+            <td class="action-btns">
+              <button class="btn btn-sm btn-secondary" @click="openPrint(item.id)">Cetak</button>
+              <button class="btn btn-sm btn-secondary" v-if="item.status==='DRAFT'" @click="openEdit(item)">Ubah</button>
+              <button class="btn btn-sm btn-danger" v-if="item.status==='DRAFT'" @click="removeItem(item)">Hapus</button>
+              <button class="btn btn-sm btn-primary" v-if="item.status==='DRAFT'" @click="approveItem(item)">Setujui</button>
+              <button class="btn btn-sm btn-secondary" v-if="item.status==='APPROVED'" @click="cancelItem(item)">Batalkan</button>
             </td>
           </tr>
         </tbody>
       </table></div>
-      <div class="pagination"><span class="pagination-info">Total: {{ total }}</span><button class="page-btn" :disabled="page<=1" @click="changePage(page-1)">‹</button><button class="page-btn" v-for="p in Math.ceil(total/15)||1" :key="p" :class="{active:p===page}" @click="changePage(p)">{{ p }}</button><button class="page-btn" :disabled="page>=Math.ceil(total/15)" @click="changePage(page+1)">›</button></div>
     </div>
 
-    <BaseModal v-if="showForm" title="Catat Pembayaran Penjualan" @close="showForm=false">
-      <div class="form-group">
-        <label class="form-label required">Penjualan</label>
-        <SOSearchSelect v-model="form.sale_id" @so-selected="onSOSelected" />
-        <div v-if="selectedSO" class="so-info-box">
-          <span>Total: <strong>{{ fmt(selectedSO.total_amount) }}</strong></span>
-        </div>
+    <BaseModal v-if="showForm" :title="isEdit ? 'Ubah Pembayaran Penjualan' : 'Catat Pembayaran Penjualan'" size="xl" @close="showForm=false">
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label required">Pelanggan</label><CustomerSearchSelect v-model="form.customer_id" /></div>
+        <div class="form-group"><label class="form-label required">Tanggal</label><input class="form-control" type="date" v-model="form.date" /></div>
       </div>
-      <div class="form-group"><label class="form-label required">Tanggal</label><input class="form-control" type="date" v-model="form.date" required /></div>
-      <div class="form-group"><label class="form-label required">Jumlah</label><input class="form-control" type="number" v-model="form.amount" min="1" required /></div>
-      <div class="form-group">
-        <label class="form-label required">Diterima Sampai Akun</label>
-        <COASearchSelect v-model="form.account_id" type="ASSET" placeholder="-- Pilih Akun --" />
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label required">Akun Penerimaan (Kas/Bank)</label><COASearchSelect v-model="form.account_id" type="ASSET" /></div>
+        <div class="form-group"><label class="form-label">Catatan</label><input class="form-control" v-model="form.note" /></div>
       </div>
+
+      <div class="card" style="padding:12px">
+        <div class="fw-600" style="margin-bottom:8px">Daftar Invoice Belum Lunas</div>
+        <div v-if="loadingOutstanding" class="text-muted">Memuat data outstanding...</div>
+        <div v-else-if="!form.customer_id" class="text-muted">Pilih pelanggan terlebih dahulu.</div>
+        <div v-else-if="outstanding.length===0" class="text-muted">Tidak ada piutang outstanding untuk pelanggan ini.</div>
+        <div v-else class="table-wrapper"><table>
+          <thead><tr><th>No</th><th>Invoice</th><th>Tanggal</th><th>Total Penjualan</th><th>Sudah Dibayar</th><th>Sisa Piutang</th><th>Dibayar Sekarang</th></tr></thead>
+          <tbody>
+            <tr v-for="(row, idx) in outstanding" :key="row.sale_id">
+              <td>{{ idx + 1 }}</td>
+              <td>{{ row.sale_number || ('SO-' + String(row.sale_id).padStart(6, '0')) }}</td>
+              <td>{{ fmtDate(row.date) }}</td>
+              <td>{{ fmt(row.total_amount) }}</td>
+              <td>{{ fmt(row.total_paid) }}</td>
+              <td>{{ fmt(row.remaining_amount) }}</td>
+              <td><input class="form-control" type="number" min="0" :max="row.remaining_amount" step="0.01" v-model.number="row.amount_paid" @input="onAmountInput(row)" /></td>
+            </tr>
+          </tbody>
+        </table></div>
+      </div>
+
+      <div class="text-right fw-700" style="margin-top:10px">Total Pembayaran: {{ fmt(totalAllocated) }}</div>
       <template #footer><button class="btn btn-secondary" @click="showForm=false">Batal</button><button class="btn btn-primary" :disabled="saving" @click="save"><span v-if="saving" class="spinner"></span><span v-else>Simpan</span></button></template>
     </BaseModal>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import BaseModal from '@/components/BaseModal.vue'
-import StatusBadge from '@/components/StatusBadge.vue'
-import SOSearchSelect from '@/components/SOSearchSelect.vue'
+import CustomerSearchSelect from '@/components/CustomerSearchSelect.vue'
 import COASearchSelect from '@/components/COASearchSelect.vue'
+import StatusBadge from '@/components/StatusBadge.vue'
 import api from '@/services/api'
 
-const auth = useAuthStore()
-const toast = useToastStore()
+const auth = useAuthStore(); const toast = useToastStore()
+const items = ref([]); const loading = ref(false)
+const showForm = ref(false); const saving = ref(false)
+const loadingOutstanding = ref(false); const outstanding = ref([])
+const isEdit = ref(false); const editId = ref(null)
+const form = ref({ customer_id: '', date: '', account_id: '', note: '' })
 
-const items = ref([])
-const total = ref(0)
-const page = ref(1)
-const loading = ref(false)
-const showForm = ref(false)
-const saving = ref(false)
-const selectedSO = ref(null)
-
-const form = ref({ sale_id: '', date: '', amount: 0, account_id: '' })
 const fmt = n => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
+const fmtDate = d => d ? new Date(d).toLocaleDateString('id-ID') : '-'
+const totalAllocated = computed(() => outstanding.value.reduce((s, r) => s + Number(r.amount_paid || 0), 0))
 
 const fetchItems = async () => {
   loading.value = true
   try {
-    const r = await api.get('/sales/payments', { params: { page: page.value, limit: 15 } })
-    items.value = r.data.data.data
-    total.value = r.data.data.total
-  } catch (e) {
-    toast.error('Terjadi kesalahan')
-  } finally {
-    loading.value = false
+    const r = await api.get('/sales/payments', { params: { page: 1, limit: 100 } })
+    items.value = r.data.data.data || []
+  } catch { toast.error('Terjadi kesalahan') } finally { loading.value = false }
+}
+
+const fetchOutstanding = async (customerId) => {
+  if (!customerId) return
+  loadingOutstanding.value = true
+  try {
+    const r = await api.get(`/sales/payments/customer/${customerId}/outstanding`)
+    const mapEdit = new Map(outstanding.value.map(x => [x.sale_id, Number(x.amount_paid || 0)]))
+    outstanding.value = (r.data.data || []).map(x => ({ ...x, amount_paid: mapEdit.get(x.sale_id) || 0 }))
+  } catch (e) { toast.error(e.response?.data?.message || 'Gagal memuat outstanding') } finally { loadingOutstanding.value = false }
+}
+
+watch(() => form.value.customer_id, async (customerId, oldCustomerId) => {
+  if (!customerId) {
+    outstanding.value = []
+    return
+  }
+  if (customerId !== oldCustomerId) await fetchOutstanding(customerId)
+})
+
+const onAmountInput = (row) => {
+  const max = Number(row.remaining_amount || 0)
+  if (Number(row.amount_paid || 0) > max) {
+    row.amount_paid = max
+    toast.error('Jumlah dibayar tidak boleh melebihi sisa piutang.')
+  }
+  if (Number(row.amount_paid || 0) < 0) row.amount_paid = 0
+}
+
+const buildPayload = () => {
+  const details = outstanding.value.filter(r => Number(r.amount_paid || 0) > 0).map(r => ({ sale_id: r.sale_id, amount_paid: Number(r.amount_paid) }))
+  return {
+    customer_id: form.value.customer_id,
+    date: form.value.date,
+    account_id: form.value.account_id,
+    note: form.value.note,
+    total_amount: Number(totalAllocated.value || 0),
+    details,
   }
 }
 
-const changePage = p => { page.value = p; fetchItems() }
-
 const openCreate = () => {
-  form.value = { sale_id: '', date: new Date().toISOString().split('T')[0], amount: 0, account_id: '' }
-  selectedSO.value = null
+  isEdit.value = false; editId.value = null
+  form.value = { customer_id: '', date: new Date().toISOString().split('T')[0], account_id: '', note: '' }
+  outstanding.value = []
   showForm.value = true
 }
 
-const onSOSelected = (so) => {
-  selectedSO.value = so
+const openEdit = async (item) => {
+  try {
+    const r = await api.get(`/sales/payments/${item.id}`)
+    const data = r.data.data
+    isEdit.value = true
+    editId.value = item.id
+    form.value = { customer_id: data.customer_id, date: data.date, account_id: data.account_id, note: data.note || '' }
+    showForm.value = true
+    await fetchOutstanding(data.customer_id)
+    const alloc = new Map((data.details || []).map(d => [d.sale_id, Number(d.amount_paid || 0)]))
+    outstanding.value = outstanding.value.map(o => ({ ...o, amount_paid: alloc.get(o.sale_id) || 0 }))
+  } catch (e) { toast.error(e.response?.data?.message || 'Gagal memuat detail pembayaran') }
 }
 
-const openPaymentReceipt = (saleId) => {
-  if (!saleId) return
-  window.open(`/print/sales-payment/${saleId}`, '_blank')
+const removeItem = async (item) => {
+  if (!confirm('Hapus pembayaran ini?')) return
+  try {
+    await api.delete(`/sales/payments/${item.id}`)
+    toast.success('Pembayaran berhasil dihapus')
+    fetchItems()
+  } catch (e) { toast.error(e.response?.data?.message || 'Gagal menghapus data') }
 }
+
+const approveItem = async (item) => {
+  if (!confirm('Setujui pembayaran ini?')) return
+  try {
+    await api.post(`/sales/payments/${item.id}/approve`)
+    toast.success('Pembayaran disetujui')
+    fetchItems()
+  } catch (e) { toast.error(e.response?.data?.message || 'Gagal menyetujui pembayaran') }
+}
+
+const cancelItem = async (item) => {
+  const cancel_reason = prompt('Alasan pembatalan:')
+  if (cancel_reason === null) return
+  try {
+    await api.post(`/sales/payments/${item.id}/cancel`, { cancel_reason })
+    toast.success('Pembayaran dibatalkan')
+    fetchItems()
+  } catch (e) { toast.error(e.response?.data?.message || 'Gagal membatalkan pembayaran') }
+}
+
+const openPrint = (id) => window.open(`/print/sales-payment/${id}`, '_blank')
 
 const save = async () => {
+  const payload = buildPayload()
+  if (!payload.details.length) return toast.error('Total alokasi pembayaran tidak boleh kosong.')
+  if (Number(payload.total_amount) <= 0) return toast.error('Total pembayaran harus lebih besar dari 0.')
   saving.value = true
   try {
-    await api.post('/sales/payments', form.value)
-    toast.success('Pembayaran berhasil dicatat')
+    if (isEdit.value) await api.put(`/sales/payments/${editId.value}`, payload)
+    else await api.post('/sales/payments', payload)
+    toast.success('Pembayaran berhasil disimpan')
     showForm.value = false
     fetchItems()
-  } catch (e) {
-    toast.error(e.response?.data?.message || 'Terjadi kesalahan')
-  } finally {
-    saving.value = false
-  }
+  } catch (e) { toast.error(e.response?.data?.message || 'Terjadi kesalahan') } finally { saving.value = false }
 }
 
-onMounted(() => fetchItems())
+onMounted(fetchItems)
 </script>
-
-<style scoped>
-.so-info-box {
-  margin-top: 6px; padding: 6px 10px; background: #f8fafc;
-  border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; color: #64748b;
-}
-</style>

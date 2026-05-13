@@ -58,7 +58,7 @@
                   <button class="btn btn-sm btn-secondary" @click="openDetailModal(item.id)">👁</button>
                   <button class="btn btn-sm btn-secondary" v-if="auth.can('material-issue.create') && item.status === 'DRAFT'" @click="openEditModal(item.id)">✏️</button>
                   <button class="btn btn-sm btn-primary" v-if="auth.can('material-issue.approve') && item.status === 'DRAFT'" @click="openAction('approve', item)">✅</button>
-                  <button class="btn btn-sm btn-secondary" v-if="auth.can('material-issue.approve') && item.status !== 'APPROVED' && item.status !== 'CANCELLED'" @click="openAction('cancel', item)">🚫</button>
+                  <button class="btn btn-sm btn-secondary" v-if="auth.can('material-issue.approve') && item.status === 'APPROVED'" @click="openAction('cancel', item)">🚫</button>
                   <button class="btn btn-sm btn-danger" v-if="auth.can('material-issue.create') && item.status === 'DRAFT'" @click="openAction('delete', item)">🗑️</button>
                 </div>
               </td>
@@ -195,7 +195,7 @@
         <button class="btn btn-secondary" v-if="detailItem?.status === 'APPROVED' && auth.can('report.material-issues')" @click="openPrint(detailItem.id)">🖨 Print</button>
         <button class="btn btn-secondary" v-if="detailItem?.status === 'DRAFT' && auth.can('material-issue.create')" @click="openEditModal(detailItem.id)">Edit</button>
         <button class="btn btn-primary" v-if="detailItem?.status === 'DRAFT' && auth.can('material-issue.approve')" :disabled="actionLoading" @click="openAction('approve', detailItem)">Setujui</button>
-        <button class="btn btn-secondary" v-if="detailItem && detailItem.status !== 'APPROVED' && detailItem.status !== 'CANCELLED' && auth.can('material-issue.approve')" :disabled="actionLoading" @click="openAction('cancel', detailItem)">Batal</button>
+        <button class="btn btn-secondary" v-if="detailItem?.status === 'APPROVED' && auth.can('material-issue.approve')" :disabled="actionLoading" @click="openAction('cancel', detailItem)">Batal</button>
       </template>
     </BaseModal>
 
@@ -267,13 +267,13 @@ const confirmTitle = computed(() => {
 const confirmMessage = computed(() => {
   if (actionType.value === 'delete') return 'Hapus bukti pengeluaran ini?'
   if (actionType.value === 'approve') return 'Setujui bukti pengeluaran ini? Stok akan berkurang.'
-  if (actionType.value === 'cancel') return 'Cancel bukti pengeluaran ini?'
+  if (actionType.value === 'cancel') return 'Batalkan bukti pengeluaran ini? Stok akan direverse.'
   return 'Lanjutkan proses ini?'
 })
 const confirmButtonText = computed(() => {
   if (actionType.value === 'delete') return 'Hapus'
   if (actionType.value === 'approve') return 'Setujui'
-  if (actionType.value === 'cancel') return 'Cancel'
+  if (actionType.value === 'cancel') return 'Batalkan'
   return 'Lanjutkan'
 })
 const confirmButtonClass = computed(() => {
@@ -490,7 +490,9 @@ const handleAction = async () => {
       if (detailItem.value?.id === actionTarget.value.id) await openDetailModal(actionTarget.value.id)
     }
     if (actionType.value === 'cancel') {
-      await api.post(`/material-issues/${actionTarget.value.id}/cancel`)
+      const cancel_reason = prompt('Alasan pembatalan:')
+      if (cancel_reason === null) return
+      await api.post(`/material-issues/${actionTarget.value.id}/cancel`, { cancel_reason })
       toast.success('Cancelled')
       if (detailItem.value?.id === actionTarget.value.id) await openDetailModal(actionTarget.value.id)
     }

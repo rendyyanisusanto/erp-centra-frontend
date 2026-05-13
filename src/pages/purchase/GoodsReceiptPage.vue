@@ -8,13 +8,21 @@
         <input class="form-control" type="date" v-model="dateSampai" @change="fetchItems" style="width:150px" />
       </div>
       <div class="table-wrapper"><table>
-        <thead><tr><th>No. Penerimaan</th><th>Pembelian</th><th>Supplier</th><th>Tanggal</th><th>No. Polisi</th><th>Total</th><th>Aksi</th></tr></thead>
+        <thead><tr><th>No. Penerimaan</th><th>Pembelian</th><th>Supplier</th><th>Tanggal</th><th>Status</th><th>No. Polisi</th><th>Total</th><th>Aksi</th></tr></thead>
         <tbody>
-          <template v-if="loading"><tr class="skeleton-row" v-for="i in 5" :key="i"><td v-for="j in 6" :key="j"><div class="skeleton-cell"></div></td></tr></template>
-          <template v-else-if="items.length===0"><tr><td colspan="7"><div class="empty-state"><div class="empty-state-icon">📥</div><h3>No goods receipts found</h3></div></td></tr></template>
+          <template v-if="loading"><tr class="skeleton-row" v-for="i in 5" :key="i"><td v-for="j in 8" :key="j"><div class="skeleton-cell"></div></td></tr></template>
+          <template v-else-if="items.length===0"><tr><td colspan="8"><div class="empty-state"><div class="empty-state-icon">📥</div><h3>No goods receipts found</h3></div></td></tr></template>
           <tr v-else v-for="item in items" :key="item.id">
-            <td class="fw-600">{{ item.receipt_number }}</td><td>PO #{{ item.purchase?.id }}</td><td>{{ item.purchase?.supplier?.name }}</td><td>{{ item.date }}</td><td>{{ item.license_plate }}</td><td>{{ fmt(item.total_amount) }}</td>
-            <td><button class="btn btn-sm btn-secondary" @click="openDetail(item)">👁 Detail</button></td>
+            <td class="fw-600">{{ item.receipt_number }}</td><td>PO #{{ item.purchase?.id }}</td><td>{{ item.purchase?.supplier?.name }}</td><td>{{ item.date }}</td><td><StatusBadge :status="item.status" /></td><td>{{ item.license_plate }}</td><td>{{ fmt(item.total_amount) }}</td>
+            <td>
+              <div class="action-btns">
+                <button class="btn btn-sm btn-secondary" @click="openDetail(item)">👁 Detail</button>
+                <button class="btn btn-sm btn-warning" v-if="item.status==='DRAFT' && auth.can('goods-receipt.create')" @click="openEdit(item)">Edit</button>
+                <button class="btn btn-sm btn-danger" v-if="item.status==='DRAFT' && auth.can('goods-receipt.create')" @click="removeItemData(item)">Hapus</button>
+                <button class="btn btn-sm btn-primary" v-if="item.status==='DRAFT' && auth.can('goods-receipt.create')" @click="approveItem(item)">Setujui</button>
+                <button class="btn btn-sm btn-secondary" v-if="item.status==='APPROVED' && auth.can('goods-receipt.create')" @click="cancelItem(item)">Batalkan</button>
+              </div>
+            </td>
           </tr>
         </tbody>
       </table></div>
@@ -22,7 +30,7 @@
     </div>
 
     <!-- Create Modal -->
-    <BaseModal v-if="showForm" title="Terima Barang" size="xl" @close="showForm=false">
+    <BaseModal v-if="showForm" :title="editingId ? 'Edit Penerimaan Barang' : 'Terima Barang'" size="xl" @close="showForm=false">
       <div class="grid-2">
         <div class="form-group">
           <label class="form-label required">Pembelian</label>
@@ -62,7 +70,7 @@
           </tbody>
         </table>
       </div>
-      <template #footer><button class="btn btn-secondary" @click="showForm=false">Batal</button><button class="btn btn-primary" :disabled="saving" @click="save"><span v-if="saving" class="spinner"></span><span v-else>Simpan</span></button></template>
+      <template #footer><button class="btn btn-secondary" @click="showForm=false">Batal</button><button class="btn btn-primary" :disabled="saving" @click="save"><span v-if="saving" class="spinner"></span><span v-else>{{ editingId ? 'Update' : 'Simpan Draft' }}</span></button></template>
     </BaseModal>
 
     <!-- Detail Modal -->
@@ -71,12 +79,20 @@
         <div class="detail-info-item"><label>Tanggal</label><p>{{ selectedItem.date }}</p></div>
         <div class="detail-info-item"><label>PO#</label><p>{{ selectedItem.purchase?.id }}</p></div>
         <div class="detail-info-item"><label>Supplier</label><p>{{ selectedItem.purchase?.supplier?.name }}</p></div>
+        <div class="detail-info-item"><label>Status</label><p><StatusBadge :status="selectedItem.status" /></p></div>
         <div class="detail-info-item"><label>No. Polisi</label><p>{{ selectedItem.license_plate || '-' }}</p></div>
         <div class="detail-info-item"><label>Total</label><p class="fw-700">{{ fmt(selectedItem.total_amount) }}</p></div>
       </div>
       <table class="detail-table"><thead><tr><th>Bahan Baku</th><th>Qty</th><th>Harga</th><th>Subtotal</th></tr></thead>
         <tbody><tr v-for="d in selectedItem.details" :key="d.id"><td>{{ d.rawMaterial?.name }}</td><td>{{ d.qty_received }}</td><td>{{ fmt(d.price) }}</td><td>{{ fmt(d.subtotal) }}</td></tr></tbody>
       </table>
+      <template #footer>
+        <button class="btn btn-secondary" @click="showDetail=false">Tutup</button>
+        <button class="btn btn-warning" v-if="selectedItem?.status==='DRAFT' && auth.can('goods-receipt.create')" @click="openEdit(selectedItem)">Edit</button>
+        <button class="btn btn-danger" v-if="selectedItem?.status==='DRAFT' && auth.can('goods-receipt.create')" @click="removeItemData(selectedItem)">Hapus</button>
+        <button class="btn btn-primary" v-if="selectedItem?.status==='DRAFT' && auth.can('goods-receipt.create')" @click="approveItem(selectedItem)">Setujui</button>
+        <button class="btn btn-secondary" v-if="selectedItem?.status==='APPROVED' && auth.can('goods-receipt.create')" @click="cancelItem(selectedItem)">Batalkan</button>
+      </template>
     </BaseModal>
   </div>
 </template>
@@ -85,6 +101,7 @@
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'; import { useToastStore } from '@/stores/toast'
 import BaseModal from '@/components/BaseModal.vue'
+import StatusBadge from '@/components/StatusBadge.vue'
 import POSearchSelect from '@/components/POSearchSelect.vue'
 import RawMaterialSearchSelect from '@/components/RawMaterialSearchSelect.vue'
 import api from '@/services/api'
@@ -92,6 +109,7 @@ import api from '@/services/api'
 const auth=useAuthStore();const toast=useToastStore()
 const items=ref([]);const total=ref(0);const page=ref(1);const search=ref('');const dateDari=ref('');const dateSampai=ref('')
 const loading=ref(false);const showForm=ref(false);const saving=ref(false);const showDetail=ref(false);const selectedItem=ref(null)
+const editingId=ref(null)
 const selectedPOInfo=ref(null)
 const form=ref({purchase_id:'',date:'',details:[{raw_material_id:'',qty_ordered:0,qty_received:1,price:0}]})
 const fmt=n=>'Rp '+Number(n||0).toLocaleString('id-ID')
@@ -101,9 +119,29 @@ const fetchItems=async()=>{loading.value=true;try{const r=await api.get('/purcha
 const changePage=p=>{page.value=p;fetchItems()}
 
 const openCreate=()=>{
+  editingId.value=null
   selectedPOInfo.value=null
   form.value={purchase_id:'',date:new Date().toISOString().split('T')[0],license_plate:'',details:[{raw_material_id:'',qty_ordered:0,qty_received:1,price:0}]}
   showForm.value=true
+}
+const openEdit=async(item)=>{
+  try{
+    const r=await api.get(`/purchase/goods-receipts/${item.id}`)
+    const data=r.data.data
+    if(data.status!=='DRAFT'){toast.error('Hanya dokumen DRAFT yang dapat diedit');return}
+    editingId.value=data.id
+    form.value={
+      purchase_id:data.purchase_id||'',
+      date:data.date?.split('T')[0]||'',
+      license_plate:data.license_plate||'',
+      details:(data.details||[]).map(d=>({raw_material_id:d.raw_material_id,qty_ordered:Number(d.qty_received||0),qty_received:Number(d.qty_received||0),price:Number(d.price||0)}))
+    }
+    if(!form.value.details.length) form.value.details=[{raw_material_id:'',qty_ordered:0,qty_received:1,price:0}]
+    if(data.purchase_id){
+      try{const po=await api.get(`/purchase/${data.purchase_id}`);selectedPOInfo.value=po.data.data}catch{selectedPOInfo.value=null}
+    }
+    showForm.value=true
+  }catch(e){toast.error(e.response?.data?.message||'Gagal memuat data penerimaan')}
 }
 
 // Auto-fill items when PO is selected
@@ -122,7 +160,10 @@ const onPOSelected=(po)=>{
 const openDetail=async item=>{try{const r=await api.get(`/purchase/goods-receipts/${item.id}`);selectedItem.value=r.data.data;showDetail.value=true}catch(e){toast.error('Terjadi kesalahan')}}
 const addItem=()=>form.value.details.push({raw_material_id:'',qty_ordered:0,qty_received:1,price:0})
 const removeItem=i=>form.value.details.splice(i,1)
-const save=async()=>{saving.value=true;try{await api.post('/purchase/goods-receipts',form.value);toast.success('Penerimaan barang berhasil disimpan. Stok diperbarui.');showForm.value=false;fetchItems()}catch(e){toast.error(e.response?.data?.message||'Terjadi kesalahan')}finally{saving.value=false}}
+const removeItemData=async(item)=>{if(!confirm('Hapus draft penerimaan barang ini?'))return;try{await api.delete(`/purchase/goods-receipts/${item.id}`);toast.success('Draft penerimaan barang dihapus');if(showDetail.value&&selectedItem.value?.id===item.id)showDetail.value=false;fetchItems()}catch(e){toast.error(e.response?.data?.message||'Gagal menghapus data')}}
+const approveItem=async(item)=>{if(!confirm('Setujui penerimaan barang ini? Stok dan jurnal akan diposting.'))return;try{await api.post(`/purchase/goods-receipts/${item.id}/approve`);toast.success('Penerimaan barang disetujui');if(showDetail.value&&selectedItem.value?.id===item.id)await openDetail(item);fetchItems()}catch(e){toast.error(e.response?.data?.message||'Gagal menyetujui penerimaan')}}
+const cancelItem=async(item)=>{const cancel_reason=prompt('Alasan pembatalan:');if(cancel_reason===null)return;try{await api.post(`/purchase/goods-receipts/${item.id}/cancel`,{cancel_reason});toast.success('Penerimaan barang dibatalkan');if(showDetail.value&&selectedItem.value?.id===item.id)await openDetail(item);fetchItems()}catch(e){toast.error(e.response?.data?.message||'Gagal membatalkan penerimaan')}}
+const save=async()=>{saving.value=true;try{if(editingId.value){await api.put(`/purchase/goods-receipts/${editingId.value}`,form.value);toast.success('Penerimaan barang berhasil diperbarui')}else{await api.post('/purchase/goods-receipts',form.value);toast.success('Draft penerimaan barang berhasil disimpan')}showForm.value=false;if(showDetail.value&&selectedItem.value?.id===editingId.value)await openDetail(selectedItem.value);fetchItems()}catch(e){toast.error(e.response?.data?.message||'Terjadi kesalahan')}finally{saving.value=false}}
 onMounted(()=>{fetchItems()})
 </script>
 

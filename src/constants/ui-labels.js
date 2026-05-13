@@ -58,7 +58,7 @@ export const STATUS_LABEL_MAP = {
   ACTIVE: 'Aktif',
   INACTIVE: 'Nonaktif',
   PAID: 'Lunas',
-  UNPAID: 'Belum Lunas',
+  UNPAID: 'Belum Dibayar',
   OPEN: 'Terbuka',
   CLOSED: 'Ditutup',
   PENDING: 'Menunggu',

@@ -67,7 +67,8 @@ const routes = [
     { path: '/print/receivables', name: 'ReceivablesPrint', component: () => import('../pages/reports/ReceivablesPrint.vue'), meta: { permission: 'report.receivables', hideLayout: true } },
     { path: '/print/production', name: 'ProductionReportPrint', component: () => import('../pages/reports/ProductionReportPrint.vue'), meta: { permission: 'report.production', hideLayout: true } },
     { path: '/print/sales/:id', name: 'SalesInvoicePrint', component: () => import('../pages/sales/SalesInvoicePrint.vue'), meta: { permission: 'sales.read', hideLayout: true } },
-    { path: '/print/sales-payment/:sale_id', name: 'SalesPaymentPrint', component: () => import('../pages/sales/SalesPaymentPrint.vue'), meta: { permission: 'sales.read', hideLayout: true } },
+    { path: '/print/sales-payment/:payment_id', name: 'SalesPaymentPrint', component: () => import('../pages/sales/SalesPaymentPrint.vue'), meta: { permission: 'sales.read', hideLayout: true } },
+    { path: '/print/sales-payment/:sale_id', redirect: to => `/print/sales-payment/${to.params.sale_id}` },
     { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
 ]
 

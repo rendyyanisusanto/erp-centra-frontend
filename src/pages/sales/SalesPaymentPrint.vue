@@ -19,53 +19,53 @@
           <div class="line-row">
             <span class="label">Sudah terima dari</span>
             <span class="colon">:</span>
-            <span class="value">{{ payload.sale?.customer?.name || '-' }}</span>
+            <span class="value">{{ payload.customer?.name || '-' }}</span>
           </div>
           <div class="line-row">
             <span class="label">Uang sejumlah</span>
             <span class="colon">:</span>
-            <span class="value">{{ fmtCurrency(payload.total_paid) }}</span>
+            <span class="value">{{ fmtCurrency(payload.total_amount) }}</span>
           </div>
           <div class="line-row">
             <span class="label"></span>
             <span class="colon"></span>
-            <span class="text-amount">({{ terbilang(payload.total_paid) }} rupiah)</span>
+            <span class="text-amount">({{ terbilang(payload.total_amount) }} rupiah)</span>
           </div>
           <div class="line-row">
             <span class="label">Untuk pembayaran</span>
             <span class="colon">:</span>
-            <span class="value">Penjualan No SO-{{ payload.sale?.id }}</span>
+            <span class="value">Invoice Penjualan</span>
           </div>
           <div class="line-row">
             <span class="label">Tanggal pembayaran</span>
             <span class="colon">:</span>
-            <span class="value">{{ paymentDateText }}</span>
+            <span class="value">{{ fmtDate(payload.date) }}</span>
           </div>
         </div>
 
-        <table class="doc-table" v-if="(payload.sale_payments || []).length > 1">
+        <table class="doc-table">
           <thead>
             <tr>
               <th class="text-center" style="width: 52px;">No</th>
+              <th>Invoice</th>
               <th>Tanggal</th>
-              <th>Akun</th>
+              <th>Total Penjualan</th>
               <th class="text-right" style="width: 170px;">Jumlah</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(p, idx) in payload.sale_payments" :key="p.id || idx">
+            <tr v-for="(p, idx) in (payload.details || [])" :key="p.id || idx">
               <td class="text-center">{{ idx + 1 }}</td>
-              <td>{{ fmtDate(p.date) }}</td>
-              <td>{{ p.account?.name || '-' }}</td>
-              <td class="text-right">{{ fmtCurrency(p.amount) }}</td>
+              <td>SO-{{ String(p.sale_id).padStart(6, '0') }}</td>
+              <td>{{ fmtDate(p.sale?.date) }}</td>
+              <td class="text-right">{{ fmtCurrency(p.sale?.total_amount) }}</td>
+              <td class="text-right">{{ fmtCurrency(p.amount_paid) }}</td>
             </tr>
           </tbody>
         </table>
 
         <div class="summary">
-          <div class="summary-row"><span>Total penjualan</span><span>{{ fmtCurrency(payload.sale?.total_amount) }}</span></div>
-          <div class="summary-row"><span>Total dibayar</span><span>{{ fmtCurrency(payload.total_paid) }}</span></div>
-          <div class="summary-row"><span>Sisa</span><span>{{ fmtCurrency(payload.remaining_amount) }}</span></div>
+          <div class="summary-row"><span>Total pembayaran</span><span>{{ fmtCurrency(payload.total_amount) }}</span></div>
         </div>
 
         <div class="signature-grid">
@@ -86,7 +86,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
 
@@ -102,12 +102,6 @@ const fmtDate = (v) => {
   if (Number.isNaN(d.getTime())) return '-'
   return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
 }
-
-const paymentDateText = computed(() => {
-  const payments = payload.value?.sale_payments || []
-  if (!payments.length) return '-'
-  return fmtDate(payments[payments.length - 1].date)
-})
 
 const units = ['', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh', 'sebelas']
 const toWords = (n) => {
@@ -132,14 +126,14 @@ const loadData = async () => {
   loading.value = true
   errorMessage.value = ''
   try {
-    const saleId = route.params.sale_id
-    if (!saleId) {
-      errorMessage.value = 'ID penjualan tidak ditemukan.'
+    const paymentId = route.params.payment_id || route.params.sale_id
+    if (!paymentId) {
+      errorMessage.value = 'ID pembayaran tidak ditemukan.'
       return
     }
-    const res = await api.get(`/sales/${saleId}/payments`)
+    const res = await api.get(`/sales/payments/${paymentId}`)
     payload.value = res.data.data
-    if (!payload.value?.sale_payments?.length) {
+    if (!payload.value?.details?.length) {
       errorMessage.value = 'Data pembayaran belum tersedia, kwitansi tidak dapat dicetak.'
       return
     }
