@@ -50,10 +50,12 @@
       <div class="form-group"><label class="form-label">Keterangan</label><input class="form-control" v-model="form.description" /></div>
       <div class="form-group">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><label class="form-label" style="margin:0">Item</label><button type="button" class="btn btn-sm btn-secondary" @click="addItem">+ Tambah</button></div>
-        <table class="detail-table"><thead><tr><th>Produk</th><th>Jumlah</th><th>Harga</th><th>Subtotal</th><th></th></tr></thead>
+        <table class="detail-table"><thead><tr><th>Produk</th><th>Jumlah</th><th>Satuan</th><th>Base Qty</th><th>Harga</th><th>Subtotal</th><th></th></tr></thead>
           <tbody><tr v-for="(d,i) in form.details" :key="i">
             <td style="min-width:200px"><ProductSearchSelect v-model="d.product_id" /></td>
             <td><input class="form-control" type="number" v-model="d.qty" min="0.01" step="0.01" /></td>
+            <td style="min-width:180px"><ItemUnitSelect item-type="PRODUCT" :item-id="d.product_id" v-model="d.unit_id" @conversion-change="(c)=>onConversionChange(d,c)" /></td>
+            <td>{{ fmtNum(Number(d.qty||0) * Number(d.conversion_qty||1)) }}</td>
             <td><input class="form-control" type="number" v-model="d.price" min="0" /></td>
             <td class="fw-600">{{ fmt(d.qty*d.price) }}</td>
             <td><button type="button" class="btn btn-sm btn-danger" @click="removeItem(i)">✕</button></td>
@@ -74,8 +76,8 @@
         <div class="detail-info-item"><label>Total Dibayar</label><p class="fw-700">{{ fmt(selectedItem.total_paid) }}</p></div>
         <div class="detail-info-item"><label>Sisa Piutang</label><p class="fw-700">{{ fmt(selectedItem.remaining_amount) }}</p></div>
       </div>
-      <table class="detail-table"><thead><tr><th>Produk</th><th>Jumlah</th><th>Harga</th><th>Subtotal</th></tr></thead>
-        <tbody><tr v-for="d in selectedItem.details" :key="d.id"><td>{{ d.product?.name }}</td><td>{{ d.qty }}</td><td>{{ fmt(d.price) }}</td><td>{{ fmt(d.subtotal) }}</td></tr></tbody>
+      <table class="detail-table"><thead><tr><th>Produk</th><th>Qty Transaksi</th><th>Base Qty</th><th>Harga</th><th>Subtotal</th></tr></thead>
+        <tbody><tr v-for="d in selectedItem.details" :key="d.id"><td>{{ d.product?.name }}</td><td>{{ d.qty }} {{ d.unit?.name || '' }}</td><td>{{ d.base_qty || d.qty }}</td><td>{{ fmt(d.price) }}</td><td>{{ fmt(d.subtotal) }}</td></tr></tbody>
       </table>
       <template #footer>
         <button class="btn btn-secondary" @click="showDetail=false">Tutup</button>
@@ -97,6 +99,7 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import CustomerSearchSelect from '@/components/CustomerSearchSelect.vue'
 import ProductSearchSelect from '@/components/ProductSearchSelect.vue'
 import SalesmanSearchSelect from '@/components/SalesmanSearchSelect.vue'
+import ItemUnitSelect from '@/components/ItemUnitSelect.vue'
 import api from '@/services/api'
 
 const auth = useAuthStore()
@@ -116,9 +119,10 @@ const showDetail = ref(false)
 const selectedItem = ref(null)
 const editingId = ref(null)
 
-const form = ref({ customer_id: '', salesman_id: null, date: '', description: '', details: [{ product_id: '', qty: 1, price: 0 }] })
+const form = ref({ customer_id: '', salesman_id: null, date: '', description: '', details: [{ product_id: '', qty: 1, unit_id: '', conversion_qty: 1, price: 0 }] })
 const saleTotal = computed(() => form.value.details.reduce((s, d) => s + Number(d.qty || 0) * Number(d.price || 0), 0))
 const fmt = n => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
+const fmtNum = n => Number(n || 0).toLocaleString('id-ID')
 
 let dt
 const debouncedFetch = () => { clearTimeout(dt); dt = setTimeout(() => { page.value = 1; fetchItems() }, 300) }
@@ -139,7 +143,7 @@ const fetchItems = async () => {
 const changePage = p => { page.value = p; fetchItems() }
 const openCreate = () => {
   editingId.value = null
-  form.value = { customer_id: '', salesman_id: null, date: new Date().toISOString().split('T')[0], description: '', details: [{ product_id: '', qty: 1, price: 0 }] }
+  form.value = { customer_id: '', salesman_id: null, date: new Date().toISOString().split('T')[0], description: '', details: [{ product_id: '', qty: 1, unit_id: '', conversion_qty: 1, price: 0 }] }
   showForm.value = true
 }
 const openEdit = async (item) => {
@@ -156,9 +160,9 @@ const openEdit = async (item) => {
       salesman_id: data.salesman_id || null,
       date: data.date?.split('T')[0] || '',
       description: data.description || '',
-      details: (data.details || []).map(d => ({ product_id: d.product_id, qty: Number(d.qty || 0), price: Number(d.price || 0) })),
+      details: (data.details || []).map(d => ({ product_id: d.product_id, qty: Number(d.qty || 0), unit_id: d.unit_id || '', conversion_qty: Number(d.conversion_qty || 1), price: Number(d.price || 0) })),
     }
-    if (!form.value.details.length) form.value.details = [{ product_id: '', qty: 1, price: 0 }]
+    if (!form.value.details.length) form.value.details = [{ product_id: '', qty: 1, unit_id: '', conversion_qty: 1, price: 0 }]
     showForm.value = true
   } catch (e) {
     toast.error(e.response?.data?.message || 'Gagal memuat data penjualan')
@@ -194,7 +198,8 @@ const openSalesInvoicePrint = (id) => {
   if (!id) return
   window.open(`/print/sales/${id}`, '_blank')
 }
-const addItem = () => form.value.details.push({ product_id: '', qty: 1, price: 0 })
+const onConversionChange = (row, c) => { row.conversion_qty = Number(c?.conversion_qty || 1) }
+const addItem = () => form.value.details.push({ product_id: '', qty: 1, unit_id: '', conversion_qty: 1, price: 0 })
 const removeItem = i => form.value.details.splice(i, 1)
 const save = async () => {
   saving.value = true

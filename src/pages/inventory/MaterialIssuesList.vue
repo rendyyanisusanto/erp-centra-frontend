@@ -102,12 +102,13 @@
           <button type="button" class="btn btn-sm btn-secondary" @click="addDetail(createForm.details)">+ Tambah Item</button>
         </div>
         <table class="detail-table" style="table-layout:fixed;width:100%">
-          <thead><tr><th style="width:30%">Bahan Baku</th><th style="width:18%">Satuan</th><th style="width:14%">Qty</th><th>Note</th><th style="width:48px"></th></tr></thead>
+          <thead><tr><th style="width:26%">Bahan Baku</th><th style="width:18%">Satuan</th><th style="width:12%">Qty</th><th style="width:12%">Base Qty</th><th>Note</th><th style="width:48px"></th></tr></thead>
           <tbody>
             <tr v-for="(d, i) in createForm.details" :key="i">
               <td><RawMaterialSearchSelect v-model="d.raw_material_id" @update:modelValue="onRawMaterialSelected(d, $event)" /></td>
-              <td><select class="form-control" v-model="d.unit_id"><option value="">-- Pilih Unit --</option><option v-for="u in units" :key="u.id" :value="u.id">{{ u.name }}</option></select></td>
+              <td><ItemUnitSelect item-type="RAW_MATERIAL" :item-id="d.raw_material_id" v-model="d.unit_id" @conversion-change="(c)=>onConversionChange(d,c)" /></td>
               <td><input class="form-control" type="number" min="0.01" step="0.01" v-model="d.qty" /></td>
+              <td>{{ Number((Number(d.qty||0)*Number(d.conversion_qty||1))||0).toLocaleString('id-ID') }}</td>
               <td><input class="form-control" v-model="d.note" /></td>
               <td><button type="button" class="btn btn-sm btn-danger" @click="removeDetail(createForm.details, i)">✕</button></td>
             </tr>
@@ -149,12 +150,13 @@
             <button type="button" class="btn btn-sm btn-secondary" @click="addDetail(editForm.details)">+ Tambah Item</button>
           </div>
           <table class="detail-table" style="table-layout:fixed;width:100%">
-            <thead><tr><th style="width:30%">Bahan Baku</th><th style="width:18%">Satuan</th><th style="width:14%">Qty</th><th>Note</th><th style="width:48px"></th></tr></thead>
+            <thead><tr><th style="width:26%">Bahan Baku</th><th style="width:18%">Satuan</th><th style="width:12%">Qty</th><th style="width:12%">Base Qty</th><th>Note</th><th style="width:48px"></th></tr></thead>
             <tbody>
               <tr v-for="(d, i) in editForm.details" :key="i">
                 <td><RawMaterialSearchSelect v-model="d.raw_material_id" @update:modelValue="onRawMaterialSelected(d, $event)" /></td>
-                <td><select class="form-control" v-model="d.unit_id"><option value="">-- Pilih Unit --</option><option v-for="u in units" :key="u.id" :value="u.id">{{ u.name }}</option></select></td>
+                <td><ItemUnitSelect item-type="RAW_MATERIAL" :item-id="d.raw_material_id" v-model="d.unit_id" @conversion-change="(c)=>onConversionChange(d,c)" /></td>
                 <td><input class="form-control" type="number" min="0.01" step="0.01" v-model="d.qty" /></td>
+                <td>{{ Number((Number(d.qty||0)*Number(d.conversion_qty||1))||0).toLocaleString('id-ID') }}</td>
                 <td><input class="form-control" v-model="d.note" /></td>
                 <td><button type="button" class="btn btn-sm btn-danger" @click="removeDetail(editForm.details, i)">✕</button></td>
               </tr>
@@ -185,8 +187,8 @@
         </div>
 
         <table class="detail-table">
-          <thead><tr><th>Bahan Baku</th><th>Satuan</th><th>Qty</th><th>Note</th></tr></thead>
-          <tbody><tr v-for="d in detailItem.details" :key="d.id"><td>{{ d.rawMaterial?.name || d.raw_material_id }}</td><td>{{ d.unit?.name || d.unit_id }}</td><td>{{ d.qty }}</td><td>{{ d.note || '-' }}</td></tr></tbody>
+          <thead><tr><th>Bahan Baku</th><th>Satuan</th><th>Qty Transaksi</th><th>Base Qty</th><th>Note</th></tr></thead>
+          <tbody><tr v-for="d in detailItem.details" :key="d.id"><td>{{ d.rawMaterial?.name || d.raw_material_id }}</td><td>{{ d.unit?.name || d.unit_id }}</td><td>{{ d.qty }}</td><td>{{ d.base_qty || d.qty }}</td><td>{{ d.note || '-' }}</td></tr></tbody>
         </table>
       </template>
 
@@ -219,6 +221,7 @@ import { useToastStore } from '@/stores/toast'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import RawMaterialSearchSelect from '@/components/RawMaterialSearchSelect.vue'
+import ItemUnitSelect from '@/components/ItemUnitSelect.vue'
 import api from '@/services/api'
 
 const auth = useAuthStore()
@@ -249,10 +252,8 @@ const detailItem = ref(null)
 
 const employees = ref([])
 const rawMaterials = ref([])
-const units = ref([])
-
-const createForm = ref({ date: '', month: '', year: '', department: '', recipient_employee_id: '', description: '', details: [{ raw_material_id: '', unit_id: '', qty: 1, note: '' }] })
-const editForm = ref({ date: '', month: '', year: '', department: '', recipient_employee_id: '', description: '', details: [{ raw_material_id: '', unit_id: '', qty: 1, note: '' }] })
+const createForm = ref({ date: '', month: '', year: '', department: '', recipient_employee_id: '', description: '', details: [{ raw_material_id: '', unit_id: '', conversion_qty: 1, qty: 1, note: '' }] })
+const editForm = ref({ date: '', month: '', year: '', department: '', recipient_employee_id: '', description: '', details: [{ raw_material_id: '', unit_id: '', conversion_qty: 1, qty: 1, note: '' }] })
 
 const totalPages = computed(() => Math.ceil(total.value / limit.value) || 1)
 const selectedCreateEmployee = computed(() => employees.value.find(e => e.id === Number(createForm.value.recipient_employee_id)) || null)
@@ -316,14 +317,12 @@ const fetchItems = async () => {
 
 const fetchMasters = async () => {
   try {
-    const [empRes, rmRes, unitRes] = await Promise.all([
+    const [empRes, rmRes] = await Promise.all([
       api.get('/master/employees', { params: { limit: 500 } }),
       api.get('/master/raw-materials', { params: { limit: 500 } }),
-      api.get('/master/units', { params: { limit: 500 } }),
     ])
     employees.value = empRes.data.data?.data || []
     rawMaterials.value = rmRes.data.data?.data || []
-    units.value = unitRes.data.data?.data || []
   } catch {
     toast.error('Gagal memuat data master data')
   }
@@ -340,24 +339,24 @@ const resetForm = (formRef) => {
     department: '',
     recipient_employee_id: '',
     description: '',
-    details: [{ raw_material_id: '', unit_id: '', qty: 1, note: '' }],
+    details: [{ raw_material_id: '', unit_id: '', conversion_qty: 1, qty: 1, note: '' }],
   }
 }
 
 const openCreateModal = async () => {
-  if (!employees.value.length || !rawMaterials.value.length || !units.value.length) await fetchMasters()
+  if (!employees.value.length || !rawMaterials.value.length) await fetchMasters()
   resetForm(createForm)
   showCreateModal.value = true
 }
 
-const addDetail = (details) => { details.push({ raw_material_id: '', unit_id: '', qty: 1, note: '' }) }
+const addDetail = (details) => { details.push({ raw_material_id: '', unit_id: '', conversion_qty: 1, qty: 1, note: '' }) }
 const removeDetail = (details, idx) => { details.splice(idx, 1) }
 
 const onRawMaterialSelected = (detail, rawMaterialId) => {
   detail.raw_material_id = rawMaterialId
-  const raw = rawMaterials.value.find(r => r.id === Number(rawMaterialId))
-  if (raw?.unit_id) detail.unit_id = raw.unit_id
+  if (!rawMaterialId) detail.unit_id = ''
 }
+const onConversionChange = (detail, c) => { detail.conversion_qty = Number(c?.conversion_qty || 1) }
 
 const validateForm = (formObj) => {
   if (!formObj.date) return 'Tanggal wajib diisi'
@@ -417,7 +416,7 @@ const openDetailModal = async (id) => {
 }
 
 const openEditModal = async (id) => {
-  if (!employees.value.length || !rawMaterials.value.length || !units.value.length) await fetchMasters()
+  if (!employees.value.length || !rawMaterials.value.length) await fetchMasters()
   showEditModal.value = true
   editLoading.value = true
   editId.value = id
@@ -436,7 +435,7 @@ const openEditModal = async (id) => {
       department: data.department || '',
       recipient_employee_id: data.recipient_employee_id || '',
       description: data.description || '',
-      details: (data.details || []).map(d => ({ raw_material_id: d.raw_material_id, unit_id: d.unit_id, qty: d.qty, note: d.note || '' })),
+      details: (data.details || []).map(d => ({ raw_material_id: d.raw_material_id, unit_id: d.unit_id, conversion_qty: Number(d.conversion_qty || 1), qty: d.qty, note: d.note || '' })),
     }
   } catch (e) {
     toast.error(e.response?.data?.message || 'Gagal memuat data edit data')

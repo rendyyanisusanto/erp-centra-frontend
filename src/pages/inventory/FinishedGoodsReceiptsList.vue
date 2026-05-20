@@ -115,9 +115,11 @@
         <table class="detail-table" style="table-layout:fixed;width:100%">
           <thead>
             <tr>
-              <th style="width:35%">Sumber Produksi (Opsional)</th>
-              <th style="width:23%">Produk</th>
-              <th style="width:12%">Qty Diterima</th>
+              <th style="width:30%">Sumber Produksi (Opsional)</th>
+              <th style="width:20%">Produk</th>
+              <th style="width:11%">Qty Diterima</th>
+              <th style="width:18%">Satuan</th>
+              <th style="width:11%">Base Qty</th>
               <th>Keterangan</th>
               <th style="width:48px"></th>
             </tr>
@@ -134,6 +136,8 @@
               </td>
               <td><ProductSearchSelect v-model="d.product_id" /></td>
               <td><input class="form-control" type="number" min="0.01" step="0.01" v-model="d.qty_received" /></td>
+              <td><ItemUnitSelect item-type="PRODUCT" :item-id="d.product_id" v-model="d.unit_id" @conversion-change="(c)=>onConversionChange(d,c)" /></td>
+              <td>{{ fmtNum(Number(d.qty_received || 0) * Number(d.conversion_qty || 1)) }}</td>
               <td><input class="form-control" v-model="d.note" /></td>
               <td><button class="btn btn-sm btn-danger" type="button" @click="removeDetail(i)">✕</button></td>
             </tr>
@@ -161,12 +165,13 @@
         </div>
 
         <table class="detail-table">
-          <thead><tr><th>Produk</th><th>Referensi Kode Produksi</th><th>Qty Diterima</th><th>Keterangan</th></tr></thead>
+          <thead><tr><th>Produk</th><th>Referensi Kode Produksi</th><th>Qty Transaksi</th><th>Base Qty</th><th>Keterangan</th></tr></thead>
           <tbody>
             <tr v-for="d in detailItem.details" :key="d.id">
               <td>{{ d.product?.name || d.product_id }}</td>
               <td>{{ d.productionPlanDetail?.production_code || '-' }}</td>
-              <td>{{ fmtNum(d.qty_received) }}</td>
+              <td>{{ fmtNum(d.qty_received) }} {{ d.unit?.name || '' }}</td>
+              <td>{{ fmtNum(d.base_qty_received || d.qty_received) }}</td>
               <td>{{ d.note || '-' }}</td>
             </tr>
           </tbody>
@@ -201,6 +206,7 @@ import api from '@/services/api'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ProductSearchSelect from '@/components/ProductSearchSelect.vue'
+import ItemUnitSelect from '@/components/ItemUnitSelect.vue'
 
 const auth = useAuthStore()
 const toast = useToastStore()
@@ -295,11 +301,12 @@ const resetForm = () => {
     month: now.getMonth() + 1,
     year: now.getFullYear(),
     description: '',
-    details: [{ production_plan_detail_id: '', product_id: '', qty_received: 1, note: '' }],
+    details: [{ production_plan_detail_id: '', product_id: '', qty_received: 1, unit_id: '', conversion_qty: 1, note: '' }],
   }
 }
 
-const addDetail = () => form.value.details.push({ production_plan_detail_id: '', product_id: '', qty_received: 1, note: '' })
+const onConversionChange = (row, c) => { row.conversion_qty = Number(c?.conversion_qty || 1) }
+const addDetail = () => form.value.details.push({ production_plan_detail_id: '', product_id: '', qty_received: 1, unit_id: '', conversion_qty: 1, note: '' })
 const removeDetail = (idx) => {
   if (form.value.details.length <= 1) return
   form.value.details.splice(idx, 1)
@@ -366,6 +373,8 @@ const openEditModal = async (id) => {
         production_plan_detail_id: d.production_plan_detail_id || '',
         product_id: d.product_id,
         qty_received: d.qty_received,
+        unit_id: d.unit_id || '',
+        conversion_qty: Number(d.conversion_qty || 1),
         note: d.note || '',
       })),
     }

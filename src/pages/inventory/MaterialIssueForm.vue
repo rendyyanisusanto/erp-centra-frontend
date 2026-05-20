@@ -67,6 +67,7 @@
               <th style="width:30%">Bahan Baku</th>
               <th style="width:18%">Satuan</th>
               <th style="width:14%">Qty</th>
+              <th style="width:14%">Base Qty</th>
               <th>Note</th>
               <th style="width:48px"></th>
             </tr>
@@ -79,13 +80,9 @@
                   <option v-for="rm in rawMaterials" :key="rm.id" :value="rm.id">{{ rm.name }}</option>
                 </select>
               </td>
-              <td>
-                <select class="form-control" v-model="d.unit_id">
-                  <option value="">-- Pilih Unit --</option>
-                  <option v-for="u in units" :key="u.id" :value="u.id">{{ u.name }}</option>
-                </select>
-              </td>
+              <td><ItemUnitSelect item-type="RAW_MATERIAL" :item-id="d.raw_material_id" v-model="d.unit_id" @conversion-change="(c)=>onConversionChange(d,c)" /></td>
               <td><input class="form-control" type="number" min="0.01" step="0.01" v-model="d.qty" /></td>
+              <td>{{ Number((Number(d.qty||0) * Number(d.conversion_qty||1)) || 0).toLocaleString('id-ID') }}</td>
               <td><input class="form-control" v-model="d.note" /></td>
               <td><button type="button" class="btn btn-sm btn-danger" @click="removeDetail(i)">✕</button></td>
             </tr>
@@ -101,6 +98,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToastStore } from '@/stores/toast'
 import api from '@/services/api'
+import ItemUnitSelect from '@/components/ItemUnitSelect.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -113,7 +111,6 @@ const saving = ref(false)
 
 const employees = ref([])
 const rawMaterials = ref([])
-const units = ref([])
 
 const form = ref({
   date: '',
@@ -122,7 +119,7 @@ const form = ref({
   department: '',
   recipient_employee_id: '',
   description: '',
-  details: [{ raw_material_id: '', unit_id: '', qty: 1, note: '' }],
+  details: [{ raw_material_id: '', unit_id: '', conversion_qty: 1, qty: 1, note: '' }],
 })
 
 const selectedEmployee = computed(() => employees.value.find(e => e.id === Number(form.value.recipient_employee_id)) || null)
@@ -137,14 +134,12 @@ const toDateTimeLocal = (value) => {
 
 const fetchMasters = async () => {
   try {
-    const [empRes, rmRes, unitRes] = await Promise.all([
+    const [empRes, rmRes] = await Promise.all([
       api.get('/master/employees', { params: { limit: 500 } }),
       api.get('/master/raw-materials', { params: { limit: 500 } }),
-      api.get('/master/units', { params: { limit: 500 } }),
     ])
     employees.value = empRes.data.data?.data || []
     rawMaterials.value = rmRes.data.data?.data || []
-    units.value = unitRes.data.data?.data || []
   } catch (e) {
     toast.error('Gagal memuat data master data')
   }
@@ -172,6 +167,7 @@ const fetchDetail = async () => {
       details: (data.details || []).map(d => ({
         raw_material_id: d.raw_material_id,
         unit_id: d.unit_id,
+        conversion_qty: Number(d.conversion_qty || 1),
         qty: d.qty,
         note: d.note || '',
       })),
@@ -184,17 +180,13 @@ const fetchDetail = async () => {
   }
 }
 
-const onRawMaterialChange = (detail) => {
-  const raw = rawMaterials.value.find(r => r.id === Number(detail.raw_material_id))
-  if (raw?.unit_id) {
-    detail.unit_id = raw.unit_id
-  }
-}
+const onRawMaterialChange = (detail) => { if (!detail.raw_material_id) detail.unit_id = '' }
+const onConversionChange = (detail, c) => { detail.conversion_qty = Number(c?.conversion_qty || 1) }
 
 const syncRecipientInfo = () => {}
 
 const addDetail = () => {
-  form.value.details.push({ raw_material_id: '', unit_id: '', qty: 1, note: '' })
+  form.value.details.push({ raw_material_id: '', unit_id: '', conversion_qty: 1, qty: 1, note: '' })
 }
 
 const removeDetail = (idx) => {

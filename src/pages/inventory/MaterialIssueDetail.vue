@@ -40,7 +40,8 @@
           <tr>
             <th>Bahan Baku</th>
             <th>Satuan</th>
-            <th>Qty</th>
+            <th>Qty Transaksi</th>
+            <th>Base Qty</th>
             <th>Note</th>
           </tr>
         </thead>
@@ -49,6 +50,7 @@
             <td>{{ d.rawMaterial?.name || d.raw_material_id }}</td>
             <td>{{ d.unit?.name || d.unit_id }}</td>
             <td>{{ d.qty }}</td>
+            <td>{{ d.base_qty || d.qty }}</td>
             <td>{{ d.note || '-' }}</td>
           </tr>
         </tbody>

@@ -58,12 +58,16 @@
           <button type="button" class="btn btn-sm btn-secondary" @click="addItem">+ Tambah Item</button>
         </div>
         <table class="detail-table" style="table-layout:fixed;width:100%">
-          <thead><tr><th style="width:40%">Bahan Baku</th><th style="width:100px">Qty Ordered</th><th style="width:100px">Qty Diterima</th><th style="width:130px">Harga</th><th style="width:48px"></th></tr></thead>
+          <thead><tr><th style="width:25%">Bahan Baku</th><th style="width:85px">Qty PO</th><th style="width:85px">Sudah</th><th style="width:85px">Sisa</th><th style="width:90px">Qty Diterima</th><th style="width:18%">Satuan</th><th style="width:100px">Base Qty</th><th style="width:120px">Harga</th><th style="width:48px"></th></tr></thead>
           <tbody>
             <tr v-for="(d,i) in form.details" :key="i">
               <td><RawMaterialSearchSelect v-model="d.raw_material_id" /></td>
               <td><input class="form-control" type="number" :value="d.qty_ordered" readonly style="background:#f8fafc;color:#64748b" /></td>
+              <td><input class="form-control" type="number" :value="d.qty_already_received||0" readonly style="background:#f8fafc;color:#64748b" /></td>
+              <td><input class="form-control" type="number" :value="d.qty_remaining||0" readonly style="background:#f8fafc;color:#64748b" /></td>
               <td><input class="form-control" type="number" v-model="d.qty_received" min="0.01" step="0.01" /></td>
+              <td><ItemUnitSelect item-type="RAW_MATERIAL" :item-id="d.raw_material_id" v-model="d.unit_id" @conversion-change="(c)=>onConversionChange(d,c)" /></td>
+              <td class="text-right">{{ Number((Number(d.qty_received||0)*Number(d.conversion_qty||1))||0).toLocaleString('id-ID') }}</td>
               <td><input class="form-control" type="number" v-model="d.price" min="0" /></td>
               <td><button type="button" class="btn btn-sm btn-danger" @click="removeItem(i)">✕</button></td>
             </tr>
@@ -83,8 +87,8 @@
         <div class="detail-info-item"><label>No. Polisi</label><p>{{ selectedItem.license_plate || '-' }}</p></div>
         <div class="detail-info-item"><label>Total</label><p class="fw-700">{{ fmt(selectedItem.total_amount) }}</p></div>
       </div>
-      <table class="detail-table"><thead><tr><th>Bahan Baku</th><th>Qty</th><th>Harga</th><th>Subtotal</th></tr></thead>
-        <tbody><tr v-for="d in selectedItem.details" :key="d.id"><td>{{ d.rawMaterial?.name }}</td><td>{{ d.qty_received }}</td><td>{{ fmt(d.price) }}</td><td>{{ fmt(d.subtotal) }}</td></tr></tbody>
+      <table class="detail-table"><thead><tr><th>Bahan Baku</th><th>Qty Transaksi</th><th>Base Qty</th><th>Harga</th><th>Subtotal</th></tr></thead>
+        <tbody><tr v-for="d in selectedItem.details" :key="d.id"><td>{{ d.rawMaterial?.name }}</td><td>{{ d.qty_received }} {{ d.unit?.name || '' }}</td><td>{{ d.base_qty_received || d.qty_received }}</td><td>{{ fmt(d.price) }}</td><td>{{ fmt(d.subtotal) }}</td></tr></tbody>
       </table>
       <template #footer>
         <button class="btn btn-secondary" @click="showDetail=false">Tutup</button>
@@ -99,19 +103,21 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'; import { useToastStore } from '@/stores/toast'
 import BaseModal from '@/components/BaseModal.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import POSearchSelect from '@/components/POSearchSelect.vue'
 import RawMaterialSearchSelect from '@/components/RawMaterialSearchSelect.vue'
+import ItemUnitSelect from '@/components/ItemUnitSelect.vue'
 import api from '@/services/api'
 
-const auth=useAuthStore();const toast=useToastStore()
+const auth=useAuthStore();const toast=useToastStore();const route=useRoute()
 const items=ref([]);const total=ref(0);const page=ref(1);const search=ref('');const dateDari=ref('');const dateSampai=ref('')
 const loading=ref(false);const showForm=ref(false);const saving=ref(false);const showDetail=ref(false);const selectedItem=ref(null)
 const editingId=ref(null)
 const selectedPOInfo=ref(null)
-const form=ref({purchase_id:'',date:'',details:[{raw_material_id:'',qty_ordered:0,qty_received:1,price:0}]})
+const form=ref({purchase_id:'',date:'',details:[{raw_material_id:'',qty_ordered:0,qty_received:1,unit_id:'',conversion_qty:1,price:0}]})
 const fmt=n=>'Rp '+Number(n||0).toLocaleString('id-ID')
 let dt;const debouncedFetch=()=>{clearTimeout(dt);dt=setTimeout(()=>{page.value=1;fetchItems()},300)}
 
@@ -121,7 +127,7 @@ const changePage=p=>{page.value=p;fetchItems()}
 const openCreate=()=>{
   editingId.value=null
   selectedPOInfo.value=null
-  form.value={purchase_id:'',date:new Date().toISOString().split('T')[0],license_plate:'',details:[{raw_material_id:'',qty_ordered:0,qty_received:1,price:0}]}
+  form.value={purchase_id:'',date:new Date().toISOString().split('T')[0],license_plate:'',details:[{raw_material_id:'',qty_ordered:0,qty_received:1,unit_id:'',conversion_qty:1,price:0}]}
   showForm.value=true
 }
 const openEdit=async(item)=>{
@@ -134,9 +140,9 @@ const openEdit=async(item)=>{
       purchase_id:data.purchase_id||'',
       date:data.date?.split('T')[0]||'',
       license_plate:data.license_plate||'',
-      details:(data.details||[]).map(d=>({raw_material_id:d.raw_material_id,qty_ordered:Number(d.qty_received||0),qty_received:Number(d.qty_received||0),price:Number(d.price||0)}))
+      details:(data.details||[]).map(d=>({raw_material_id:d.raw_material_id,qty_ordered:Number(d.qty_received||0),qty_received:Number(d.qty_received||0),unit_id:d.unit_id||'',conversion_qty:Number(d.conversion_qty||1),price:Number(d.price||0)}))
     }
-    if(!form.value.details.length) form.value.details=[{raw_material_id:'',qty_ordered:0,qty_received:1,price:0}]
+    if(!form.value.details.length) form.value.details=[{raw_material_id:'',qty_ordered:0,qty_received:1,unit_id:'',conversion_qty:1,price:0}]
     if(data.purchase_id){
       try{const po=await api.get(`/purchase/${data.purchase_id}`);selectedPOInfo.value=po.data.data}catch{selectedPOInfo.value=null}
     }
@@ -151,20 +157,38 @@ const onPOSelected=(po)=>{
     form.value.details=po.details.map(d=>({
       raw_material_id: d.item_id,
       qty_ordered: Number(d.qty)||0,
-      qty_received: Number(d.qty)||0,
+      qty_already_received: Number(d.qty_received||0),
+      qty_remaining: Math.max(Number(d.qty||0)-Number(d.qty_received||0),0),
+      qty_received: Math.max(Number(d.qty||0)-Number(d.qty_received||0),0),
+      unit_id: d.unit_id || '',
+      conversion_qty: Number(d.conversion_qty || 1),
       price: Number(d.price)||0,
     }))
   }
 }
 
 const openDetail=async item=>{try{const r=await api.get(`/purchase/goods-receipts/${item.id}`);selectedItem.value=r.data.data;showDetail.value=true}catch(e){toast.error('Terjadi kesalahan')}}
-const addItem=()=>form.value.details.push({raw_material_id:'',qty_ordered:0,qty_received:1,price:0})
+const onConversionChange=(row,c)=>{ row.conversion_qty = Number(c?.conversion_qty || 1) }
+const addItem=()=>form.value.details.push({raw_material_id:'',qty_ordered:0,qty_already_received:0,qty_remaining:0,qty_received:1,unit_id:'',conversion_qty:1,price:0})
 const removeItem=i=>form.value.details.splice(i,1)
 const removeItemData=async(item)=>{if(!confirm('Hapus draft penerimaan barang ini?'))return;try{await api.delete(`/purchase/goods-receipts/${item.id}`);toast.success('Draft penerimaan barang dihapus');if(showDetail.value&&selectedItem.value?.id===item.id)showDetail.value=false;fetchItems()}catch(e){toast.error(e.response?.data?.message||'Gagal menghapus data')}}
 const approveItem=async(item)=>{if(!confirm('Setujui penerimaan barang ini? Stok dan jurnal akan diposting.'))return;try{await api.post(`/purchase/goods-receipts/${item.id}/approve`);toast.success('Penerimaan barang disetujui');if(showDetail.value&&selectedItem.value?.id===item.id)await openDetail(item);fetchItems()}catch(e){toast.error(e.response?.data?.message||'Gagal menyetujui penerimaan')}}
 const cancelItem=async(item)=>{const cancel_reason=prompt('Alasan pembatalan:');if(cancel_reason===null)return;try{await api.post(`/purchase/goods-receipts/${item.id}/cancel`,{cancel_reason});toast.success('Penerimaan barang dibatalkan');if(showDetail.value&&selectedItem.value?.id===item.id)await openDetail(item);fetchItems()}catch(e){toast.error(e.response?.data?.message||'Gagal membatalkan penerimaan')}}
 const save=async()=>{saving.value=true;try{if(editingId.value){await api.put(`/purchase/goods-receipts/${editingId.value}`,form.value);toast.success('Penerimaan barang berhasil diperbarui')}else{await api.post('/purchase/goods-receipts',form.value);toast.success('Draft penerimaan barang berhasil disimpan')}showForm.value=false;if(showDetail.value&&selectedItem.value?.id===editingId.value)await openDetail(selectedItem.value);fetchItems()}catch(e){toast.error(e.response?.data?.message||'Terjadi kesalahan')}finally{saving.value=false}}
-onMounted(()=>{fetchItems()})
+onMounted(async()=>{
+  await fetchItems()
+  const prefillPurchaseId = Number(route.query.purchase_id || 0)
+  if (prefillPurchaseId && auth.can('goods-receipt.create')) {
+    openCreate()
+    form.value.purchase_id = prefillPurchaseId
+    try {
+      const po = await api.get(`/purchase/${prefillPurchaseId}`)
+      onPOSelected(po.data.data)
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Gagal memuat data PO')
+    }
+  }
+})
 </script>
 
 <style>

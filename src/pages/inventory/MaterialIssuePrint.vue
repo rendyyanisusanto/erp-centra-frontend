@@ -30,6 +30,7 @@
               <th style="width: 95px">Tgl</th>
               <th>Nama Barang</th>
               <th class="text-right" style="width: 80px">Jumlah</th>
+              <th class="text-right" style="width: 80px">Base Qty</th>
               <th style="width: 80px">Satuan</th>
               <th style="width: 130px">Penerima</th>
               <th style="width: 120px">Posisi</th>
@@ -37,12 +38,13 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!item.details?.length"><td colspan="8" class="text-center text-muted">No detail items</td></tr>
+            <tr v-if="!item.details?.length"><td colspan="9" class="text-center text-muted">No detail items</td></tr>
             <tr v-else v-for="(d, i) in item.details" :key="d.id">
               <td class="text-center">{{ i + 1 }}</td>
               <td>{{ fmtDate(item.date, true) }}</td>
               <td>{{ d.rawMaterial?.name || d.raw_material_id }}</td>
               <td class="text-right">{{ fmtQty(d.qty) }}</td>
+              <td class="text-right">{{ fmtQty(d.base_qty || d.qty) }}</td>
               <td>{{ d.unit?.name || d.unit_id }}</td>
               <td>{{ item.recipientEmployee?.name || '-' }}</td>
               <td>{{ item.recipientEmployee?.position?.name || '-' }}</td>
